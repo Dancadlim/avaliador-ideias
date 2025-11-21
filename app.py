@@ -31,7 +31,7 @@ try:
     if "google" in st.secrets:
         api_key = st.secrets["google"]["api_key"]
         # Modelo Flash é mais rápido e barato para chat
-        llm = ChatGoogleGenerativeAI(model="gemini-1.5-flash", google_api_key=api_key)
+        llm = ChatGoogleGenerativeAI(model="gemini-2.5-flash", google_api_key=api_key)
     else:
         st.warning("⚠️ Configure a chave [google] nos Secrets para ativar a IA.")
         llm = None
