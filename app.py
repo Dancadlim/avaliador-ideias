@@ -241,7 +241,7 @@ else:
                     # Campo de texto que salva automaticamente quando muda (on_change é complexo, vamos usar key unique e salvar no blur ou botao)
                     macro_text = st.text_area("Resumo Oficial do Mundo (Contexto para o Micro)", 
                                             value=proj.get("macro_context_text", ""), 
-                                            height=300,
+                                            height=500,
                                             key="txt_macro")
                     
                     if st.button("Salvar Definições Macro"):
