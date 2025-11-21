@@ -5,13 +5,12 @@ import datetime
 import json
 from langchain_google_genai import ChatGoogleGenerativeAI
 from langchain_core.messages import HumanMessage, AIMessage
-# --- IMPORTAÇÃO NOVA ---
-import teams 
+import teams  # Importa nosso arquivo de agentes
 
 # --- CONFIGURAÇÃO DA PÁGINA ---
 st.set_page_config(page_title="Avaliador de Ideias", page_icon="🚀", layout="wide")
 
-# --- 1. CONEXÃO COM FIREBASE ---
+# --- 1. CONEXÃO COM FIREBASE (BLINDADA) ---
 if not firebase_admin._apps:
     try:
         if "firebase" in st.secrets:
@@ -32,9 +31,9 @@ db = firestore.client()
 try:
     if "google" in st.secrets:
         api_key = st.secrets["google"]["api_key"]
+        # Usando Flash para chat rápido
         llm = ChatGoogleGenerativeAI(model="gemini-2.5-flash", google_api_key=api_key)
     else:
-        # st.warning("⚠️ Configure a chave [google] nos Secrets.") # Comentado para limpar a tela
         llm = None
 except Exception as e:
     st.error(f"Erro ao configurar IA: {e}")
@@ -73,12 +72,17 @@ def criar_nova_ideia(titulo, descricao, categoria):
         "category": categoria,
         "status": "rascunho",
         "created_at": datetime.datetime.now(),
+        
+        # Campos gerais
         "chat_history": [],
+        
+        # Campos Específicos de História
         "macro_context_text": "", 
         "macro_chat_history": [],
         "micro_chat_history": [],
         "micro_content_text": "",
-        # Novos campos para guardar os relatórios da CrewAI
+        
+        # Relatórios CrewAI
         "reports_macro": [],
         "reports_micro": []
     })
@@ -89,12 +93,10 @@ def atualizar_campo_firebase(projeto_id, campo, valor):
     db.collection("ideas").document(projeto_id).update({campo: valor})
 
 def salvar_relatorio_crew(projeto_id, campo_array, relatorio_texto):
-    """Adiciona um novo relatório à lista no Firebase"""
     novo_relatorio = {
         "date": datetime.datetime.now().strftime("%Y-%m-%d %H:%M"),
-        "content": str(relatorio_texto) # Garante que é string
+        "content": str(relatorio_texto)
     }
-    # Firestore arrayUnion adiciona à lista existente
     db.collection("ideas").document(projeto_id).update({
         campo_array: firestore.ArrayUnion([novo_relatorio])
     })
@@ -106,11 +108,51 @@ def salvar_historico_chat(projeto_id, campo_banco, historico_langchain):
         historico_json.append({"role": role, "content": msg.content})
     atualizar_campo_firebase(projeto_id, campo_banco, historico_json)
 
+def gerar_resumo_ia(historico_chat, tipo_resumo):
+    """Usa a IA para transformar o chat bagunçado em texto limpo"""
+    if not llm or not historico_chat:
+        return None
+
+    # Transforma lista de objetos em texto puro
+    texto_conversa = ""
+    for msg in historico_chat:
+        # Verifica se é dicionário (do Firebase) ou Objeto LangChain (da Sessão)
+        role = msg.get("role") if isinstance(msg, dict) else ("user" if isinstance(msg, HumanMessage) else "ai")
+        content = msg.get("content") if isinstance(msg, dict) else msg.content
+        texto_conversa += f"{role}: {content}\n"
+    
+    if tipo_resumo == "macro":
+        prompt = f"""
+        Analise a conversa abaixo entre Autor e Arquiteto.
+        Consolide TODAS as definições de mundo, regras, magia e enredo em um texto organizado.
+        Ignore papo furado. O texto deve servir como 'Bíblia da História'.
+        
+        CONVERSA:
+        {texto_conversa}
+        """
+    else:
+        prompt = f"""
+        Analise a conversa. O autor pode ter escrito trechos ou discutido a cena.
+        Consolide isso em um rascunho de texto literário (prosa) do capítulo.
+        
+        CONVERSA:
+        {texto_conversa}
+        """
+    
+    with st.spinner("🪄 A IA está organizando suas ideias..."):
+        try:
+            resposta = llm.invoke(prompt)
+            return resposta.content
+        except Exception as e:
+            st.error(f"Erro ao gerar resumo: {e}")
+            return None
+
 # --- COMPONENTE DE CHAT ---
 def renderizar_chat_componente(projeto, campo_banco, system_prompt, key_suffix):
     st.subheader(f"💬 Assistente ({key_suffix.capitalize()})")
     session_key = f"chat_memory_{projeto['id']}_{key_suffix}"
 
+    # Carrega histórico se necessário
     if session_key not in st.session_state:
         st.session_state[session_key] = []
         historico_salvo = projeto.get(campo_banco, [])
@@ -176,6 +218,7 @@ else:
                 logout()
 
     if not st.session_state.active_project:
+        # --- TELAS DE LISTAGEM ---
         if page == "🏠 Home":
             st.title("Bem-vindo ao Estúdio")
             st.markdown("Selecione uma categoria no menu lateral.")
@@ -210,19 +253,34 @@ else:
                     if col_c.button("Abrir Sala de Guerra ⚔️", key=doc.id):
                         abrir_projeto(data, doc.id)
 
-    # --- SALA DE GUERRA ---
+    # --- SALA DE GUERRA (PROJETO ABERTO) ---
     else:
         proj = st.session_state.active_project
         st.title(f"📂 {proj['title']}")
         
+        # LÓGICA PARA HISTÓRIAS
         if proj['category'] == 'historia':
             tab_macro, tab_micro = st.tabs(["🌍 Universo (Macro)", "✍️ Manuscrito (Micro)"])
             
-            # --- ABA MACRO ---
+            # ABA MACRO
             with tab_macro:
                 col_m1, col_m2 = st.columns([1, 1])
                 with col_m1:
                     st.subheader("Definições do Mundo")
+                    
+                    # BOTÃO DE RESUMO AUTOMÁTICO
+                    if st.button("🪄 Preencher com Resumo do Chat", key="btn_auto_macro"):
+                        # Pega o histórico da sessão atual ou do projeto
+                        session_key = f"chat_memory_{proj['id']}_macro"
+                        hist_atual = st.session_state.get(session_key, proj.get("macro_chat_history", []))
+                        
+                        resumo = gerar_resumo_ia(hist_atual, "macro")
+                        if resumo:
+                            atualizar_campo_firebase(proj["id"], "macro_context_text", resumo)
+                            proj["macro_context_text"] = resumo
+                            st.toast("Resumo gerado e inserido!", icon="🪄")
+                            st.rerun()
+
                     macro_text = st.text_area("Resumo Oficial do Mundo", value=proj.get("macro_context_text", ""), height=300, key="txt_macro")
                     
                     if st.button("Salvar Definições Macro"):
@@ -232,27 +290,22 @@ else:
 
                     st.divider()
                     
-                    # BOTÃO MÁGICO DO CREWAI MACRO
                     if st.button("✨ Validar Lógica do Mundo (CrewAI)", type="primary", key="btn_crew_macro"):
                         if not macro_text:
-                            st.error("Escreva algo no resumo primeiro!")
+                            st.error("Escreva ou gere um resumo primeiro!")
                         else:
                             with st.status("🤖 A Equipe Macro está trabalhando...", expanded=True) as status:
-                                st.write("🧠 Arquiteto de Lore analisando consistência...")
-                                st.write("📚 Analista Literário verificando mercado...")
-                                
-                                # CHAMA A FUNÇÃO DO NOVO ARQUIVO TEAMS.PY
+                                st.write("🧠 Arquiteto de Lore analisando...")
+                                st.write("📚 Analista Literário verificando...")
                                 resultado = teams.rodar_equipe_macro(macro_text, proj['title'])
-                                
                                 salvar_relatorio_crew(proj['id'], "reports_macro", resultado)
-                                status.update(label="✅ Análise Completa!", state="complete", expanded=False)
-                                st.rerun() # Recarrega para mostrar o relatório embaixo
+                                status.update(label="✅ Completo!", state="complete", expanded=False)
+                                st.rerun()
 
-                    # Exibir Relatórios Anteriores
                     if proj.get("reports_macro"):
-                        with st.expander("📜 Ver Relatórios de Validação Anteriores"):
+                        with st.expander("📜 Relatórios Anteriores"):
                             for rep in reversed(proj["reports_macro"]):
-                                st.caption(f"Gerado em: {rep['date']}")
+                                st.caption(rep['date'])
                                 st.markdown(rep['content'])
                                 st.divider()
 
@@ -260,55 +313,63 @@ else:
                     prompt_macro = f"Você é um Arquiteto de Mundos. Ajude a definir regras. Projeto: {proj['title']}"
                     renderizar_chat_componente(proj, "macro_chat_history", prompt_macro, "macro")
 
-            # --- ABA MICRO ---
+            # ABA MICRO
             with tab_micro:
                 col_u1, col_u2 = st.columns([1, 1])
                 with col_u1:
                     st.subheader("Área de Escrita")
+                    
+                    # BOTÃO DE RESUMO AUTOMÁTICO MICRO
+                    if st.button("🪄 Gerar Rascunho do Chat", key="btn_auto_micro"):
+                        session_key = f"chat_memory_{proj['id']}_micro"
+                        hist_atual = st.session_state.get(session_key, proj.get("micro_chat_history", []))
+                        
+                        resumo = gerar_resumo_ia(hist_atual, "micro")
+                        if resumo:
+                            atualizar_campo_firebase(proj["id"], "micro_content_text", resumo)
+                            proj["micro_content_text"] = resumo
+                            st.toast("Rascunho gerado!", icon="🪄")
+                            st.rerun()
+
                     micro_text = st.text_area("Capítulo Atual", value=proj.get("micro_content_text", ""), height=500, key="txt_micro")
                     
                     if st.button("Salvar Capítulo"):
                         atualizar_campo_firebase(proj["id"], "micro_content_text", micro_text)
                         st.toast("Capítulo salvo!", icon="💾")
+                        proj["micro_content_text"] = micro_text
 
                     st.divider()
                     
-                    # BOTÃO MÁGICO DO CREWAI MICRO
-                    if st.button("✨ Validar Escrita e Cena (CrewAI)", type="primary", key="btn_crew_micro"):
+                    if st.button("✨ Validar Escrita (CrewAI)", type="primary", key="btn_crew_micro"):
                         if not micro_text:
-                            st.error("Escreva algo no capítulo primeiro!")
+                            st.error("Escreva algo primeiro!")
                         else:
                             with st.status("🤖 A Equipe Micro está lendo...", expanded=True) as status:
-                                st.write("🔍 Fiscal de Continuidade checando regras...")
-                                st.write("✒️ Crítico de Estilo analisando prosa...")
-                                
-                                contexto = proj.get("macro_context_text", "Sem contexto definido.")
-                                
-                                # CHAMA A FUNÇÃO DO NOVO ARQUIVO TEAMS.PY
+                                st.write("🔍 Checando continuidade...")
+                                st.write("✒️ Analisando estilo...")
+                                contexto = proj.get("macro_context_text", "Sem contexto.")
                                 resultado = teams.rodar_equipe_micro(micro_text, contexto)
-                                
                                 salvar_relatorio_crew(proj['id'], "reports_micro", resultado)
-                                status.update(label="✅ Análise Completa!", state="complete", expanded=False)
+                                status.update(label="✅ Completo!", state="complete", expanded=False)
                                 st.rerun()
 
-                    # Exibir Relatórios Anteriores
                     if proj.get("reports_micro"):
-                        with st.expander("📜 Ver Críticas de Estilo Anteriores"):
+                        with st.expander("📜 Críticas Anteriores"):
                             for rep in reversed(proj["reports_micro"]):
-                                st.caption(f"Gerado em: {rep['date']}")
+                                st.caption(rep['date'])
                                 st.markdown(rep['content'])
                                 st.divider()
 
                 with col_u2:
-                    contexto_do_mundo = proj.get("macro_context_text", "Nenhum contexto.")
+                    contexto_do_mundo = proj.get("macro_context_text", "Nenhum contexto definido.")
                     prompt_micro = f"Você é um Editor. Contexto Obrigatório: {contexto_do_mundo}. Projeto: {proj['title']}"
                     renderizar_chat_componente(proj, "micro_chat_history", prompt_micro, "micro")
 
+        # LÓGICA PADRÃO (EMPREENDIMENTOS)
         else:
             tab_chat, tab_docs = st.tabs(["💬 Assistente Geral", "📝 Documentação"])
             with tab_chat:
-                prompt_geral = f"Você é um consultor especialista em {proj['category']}. Ajude a refinar: {proj['title']}"
+                prompt_geral = f"Consultor em {proj['category']}. Projeto: {proj['title']}"
                 renderizar_chat_componente(proj, "chat_history", prompt_geral, "geral")
             with tab_docs:
                 st.text_area("Rascunho do Projeto", height=400)
-                st.info("Em breve: Validação de Projetos e Empreendimentos via CrewAI.")
