@@ -24,25 +24,31 @@ if not firebase_admin._apps:
 
 db = firestore.client()
 
-# --- ESTADO DA SESSÃO (MEMÓRIA TEMPORÁRIA) ---
-# Isso mantem o usuário logado e sabe em qual aba ele está
+# --- ESTADO DA SESSÃO ---
 if "user" not in st.session_state:
     st.session_state.user = None
-if "current_view" not in st.session_state:
-    st.session_state.current_view = "home"
+if "active_project" not in st.session_state:
+    st.session_state.active_project = None  # Guarda o ID do projeto aberto
 
 # --- FUNÇÕES AUXILIARES ---
 def login():
-    # Simulação de Login para o MVP (Depois colocamos Google Auth real se precisar)
     st.session_state.user = {"email": "usuario_teste@gmail.com", "name": "Chefe"}
     st.rerun()
 
 def logout():
     st.session_state.user = None
+    st.session_state.active_project = None
+    st.rerun()
+
+def abrir_projeto(projeto_dict, projeto_id):
+    st.session_state.active_project = {**projeto_dict, "id": projeto_id}
+    st.rerun()
+
+def fechar_projeto():
+    st.session_state.active_project = None
     st.rerun()
 
 def criar_nova_ideia(titulo, descricao, categoria):
-    # Salva no Firebase
     doc_ref = db.collection("ideas").document()
     doc_ref.set({
         "user_email": st.session_state.user["email"],
@@ -51,129 +57,145 @@ def criar_nova_ideia(titulo, descricao, categoria):
         "category": categoria,
         "status": "rascunho",
         "created_at": datetime.datetime.now(),
-        "updated_at": datetime.datetime.now(),
-        "chat_history": [],
-        "summary": ""
+        # Novos campos preparados para o futuro:
+        "macro_context": {}, 
+        "micro_contents": [],
+        "parent_id": None 
     })
-    st.toast(f"Ideia '{titulo}' criada com sucesso!", icon="✅")
+    st.toast(f"Ideia '{titulo}' criada!", icon="✅")
     st.rerun()
 
-# --- DIALOG (JANELA MODAL) PARA NOVA IDEIA ---
+# --- DIALOG NOVA IDEIA ---
 @st.dialog("💡 Nova Ideia")
 def dialog_nova_ideia(categoria_atual):
-    st.write(f"Adicionar novo projeto em: **{categoria_atual.capitalize()}**")
+    st.write(f"Adicionar em: **{categoria_atual.capitalize()}**")
     titulo = st.text_input("Nome Provisório")
     descricao = st.text_area("Descrição Rápida")
-    
     if st.button("Criar Projeto"):
         if titulo:
             criar_nova_ideia(titulo, descricao, categoria_atual)
         else:
-            st.warning("O título é obrigatório.")
+            st.warning("Título obrigatório.")
 
 # ==================================================
-# 🖥️ INTERFACE DO USUÁRIO (UI)
+# 🖥️ UI - INTERFACE DO USUÁRIO
 # ==================================================
 
-# --- 1. TELA DE LOGIN ---
 if not st.session_state.user:
+    # --- TELA DE LOGIN ---
     col1, col2, col3 = st.columns([1, 2, 1])
     with col2:
-        st.title("🔐 Acesso ao Estúdio Criativo")
-        st.write("Faça login para acessar seu cofre de ideias.")
-        
-        # Botão simples para entrar agora (mapeado para seu email)
-        if st.button("Entrar com Google (Simulado)", type="primary", use_container_width=True):
+        st.title("🔐 Estúdio Criativo")
+        if st.button("Entrar (Simulado)", type="primary", use_container_width=True):
             login()
-            
-        st.info("ℹ️ Neste MVP, o login é automático para testes.")
-
-# --- 2. TELA PRINCIPAL (DASHBOARD) ---
 else:
-    # --- SIDEBAR (NAVEGAÇÃO) ---
+    # --- SIDEBAR ---
     with st.sidebar:
         st.title("🚀 Menu")
-        st.write(f"Olá, **{st.session_state.user['name']}**")
         
-        # Navegação
-        page = st.radio(
-            "Ir para:",
-            ["🏠 Home", "🏗️ Empreendimentos", "💻 Projetos Digitais", "📖 Histórias & Livros"]
-        )
-        
-        st.divider()
-        if st.button("Sair"):
-            logout()
+        # Se tiver projeto aberto, mostra botão de voltar
+        if st.session_state.active_project:
+            if st.button("⬅️ Voltar para Lista"):
+                fechar_projeto()
+            st.divider()
+            st.info(f"Editando: **{st.session_state.active_project['title']}**")
+        else:
+            # Navegação padrão
+            st.write(f"Olá, **{st.session_state.user['name']}**")
+            page = st.radio("Ir para:", ["🏠 Home", "🏗️ Empreendimentos", "💻 Projetos Digitais", "📖 Histórias"])
+            st.divider()
+            if st.button("Sair"):
+                logout()
 
-    # --- CONTEÚDO DAS PÁGINAS ---
+    # --- LÓGICA DE NAVEGAÇÃO PRINCIPAL ---
     
-    # A. PÁGINA HOME
-    if page == "🏠 Home":
-        st.title("Bem-vindo ao seu Estúdio de Ideias")
-        st.markdown("""
-        Aqui você pode gerenciar, validar e refinar seus projetos usando Inteligência Artificial.
-        Selecione uma categoria no menu lateral para começar.
-        """)
+    # CENÁRIO A: NENHUM PROJETO ABERTO (MOSTRAR LISTAS)
+    if not st.session_state.active_project:
         
-        # Métricas Rápidas (Busca no banco)
-        # (Futuramente faremos queries reais aqui)
-        c1, c2, c3 = st.columns(3)
-        c1.metric("Empreendimentos", "0")
-        c2.metric("Projetos Digitais", "0")
-        c3.metric("Histórias", "0")
+        if page == "🏠 Home":
+            st.title("Bem-vindo ao Estúdio")
+            st.markdown("Selecione uma categoria no menu lateral.")
+            
+        else:
+            # Mapeamento de categorias
+            cat_map = {
+                "🏗️ Empreendimentos": "empreendimento",
+                "💻 Projetos Digitais": "projeto",
+                "📖 Histórias": "historia"
+            }
+            categoria_tecnica = cat_map.get(page, "projeto")
 
-    # B. PÁGINAS DE CATEGORIA (A Lógica é a mesma para as 3)
-    else:
-        # Define a categoria técnica baseada no nome do menu
-        cat_map = {
-            "🏗️ Empreendimentos": "empreendimento",
-            "💻 Projetos Digitais": "projeto",
-            "📖 Histórias & Livros": "historia"
-        }
-        categoria_tecnica = cat_map[page]
-        
-        # Cabeçalho
-        c_top1, c_top2 = st.columns([3, 1])
-        with c_top1:
-            st.title(page)
-        with c_top2:
-            if st.button("➕ Nova Ideia", type="primary"):
+            # Cabeçalho da Categoria
+            c1, c2 = st.columns([3, 1])
+            c1.title(page)
+            if c2.button("➕ Nova Ideia", type="primary"):
                 dialog_nova_ideia(categoria_tecnica)
-        
-        # Barra de Pesquisa
-        busca = st.text_input(f"Buscar em {page}...", placeholder="Digite o nome do projeto...")
-        
-        st.divider()
-        
-        # --- LISTAGEM DE IDEIAS (CONECTADO AO FIREBASE) ---
-        # Busca apenas ideias do usuário atual e da categoria atual
-        docs = db.collection("ideas")\
-            .where("user_email", "==", st.session_state.user["email"])\
-            .where("category", "==", categoria_tecnica)\
-            .stream()
             
-        lista_ideias = list(docs)
-        
-        if not lista_ideias:
-            st.info("Nenhuma ideia encontrada nesta categoria. Crie a primeira acima! 👆")
-        
-        # Renderiza os cartões
-        for doc in lista_ideias:
-            data = doc.to_dict()
+            # Busca no Firebase
+            docs = db.collection("ideas")\
+                .where("user_email", "==", st.session_state.user["email"])\
+                .where("category", "==", categoria_tecnica)\
+                .stream()
             
-            # Filtro de busca visual
-            if busca and busca.lower() not in data['title'].lower():
-                continue
+            # Renderiza Cartões
+            ideias = list(docs)
+            if not ideias:
+                st.info("Nenhum projeto aqui ainda.")
+            
+            for doc in ideias:
+                data = doc.to_dict()
+                with st.container(border=True):
+                    col_a, col_b, col_c = st.columns([4, 2, 2])
+                    col_a.subheader(data['title'])
+                    col_a.caption(data.get('description', ''))
+                    col_b.write(f"Status: **{data.get('status', 'Rascunho')}**")
+                    
+                    # O GRANDE TRUQUE: Botão que abre o projeto
+                    if col_c.button("Abrir Sala de Guerra ⚔️", key=doc.id):
+                        abrir_projeto(data, doc.id)
+
+    # CENÁRIO B: PROJETO ABERTO (MOSTRAR DETALHES/WORKSPACE)
+    else:
+        proj = st.session_state.active_project
+        st.title(f"📂 {proj['title']}")
+        st.caption(f"Categoria: {proj['category']} | Status: {proj.get('status', 'Rascunho')}")
+        
+        # --- AQUI ENTRA A SUA IDEIA DAS ABAS INTERNAS ---
+        
+        # 1. Se for HISTÓRIA, mostra Macro/Micro
+        if proj['category'] == 'historia':
+            tab_macro, tab_micro, tab_derivados = st.tabs(["🌍 Universo (Macro)", "✍️ Manuscrito (Micro)", "📚 Derivações"])
+            
+            with tab_macro:
+                st.header("Bíblia da História")
+                st.markdown("*Aqui você define regras de magia, fichas de personagens e plot geral.*")
+                st.text_area("Resumo do Universo", height=200, placeholder="Escreva sobre o mundo...")
+                st.button("Validar Universo (CrewAI)", key="btn_macro")
+
+            with tab_micro:
+                st.header("Capítulos e Cenas")
+                st.markdown("*Aqui é a escrita passo a passo.*")
+                st.text_area("Escreva o capítulo atual...", height=300)
+                st.button("Validar Capítulo (CrewAI)", key="btn_micro")
                 
-            # Design do Cartão
-            with st.container(border=True):
-                c1, c2, c3 = st.columns([4, 2, 2])
-                with c1:
-                    st.subheader(data['title'])
-                    st.caption(data.get('description', 'Sem descrição'))
-                with c2:
-                    st.write(f"**Status:** {data.get('status', 'Rascunho')}")
-                    st.caption(f"Criado em: {data.get('created_at', datetime.datetime.now()).strftime('%d/%m/%Y')}")
-                with c3:
-                    if st.button("Abrir Chat 💬", key=f"btn_{doc.id}"):
-                        st.toast("Funcionalidade de chat será implementada na próxima etapa!")
+            with tab_derivados:
+                st.info("Funcionalidade futura: Criar continuação ou Spin-off.")
+
+        # 2. Se for PROJETO ou EMPREENDIMENTO (Ciclo Infinito)
+        else:
+            tab_geral, tab_validacao = st.tabs(["💡 Desenvolvimento", "✅ Validação Técnica"])
+            
+            with tab_geral:
+                st.subheader("Evolução do Projeto")
+                st.markdown("*Ciclo de melhoria contínua (Versão 1.0 -> 1.1)*")
+                st.text_area("Notas de evolução", height=200)
+                
+                # Botão de Finalizar/Reabrir
+                if proj.get('status') == 'concluido':
+                    st.button("🔄 Reabrir para V2.0 (Melhoria)")
+                else:
+                    st.button("🏁 Marcar como Concluído (V1.0)")
+            
+            with tab_validacao:
+                st.write("Área para relatórios técnicos de viabilidade e riscos.")
+                st.button("Chamar Especialistas (CrewAI)", key="btn_proj")
