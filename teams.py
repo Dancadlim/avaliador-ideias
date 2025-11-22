@@ -13,7 +13,7 @@ def get_llm():
         # Retorna o LLM nativo
         # Nota: 'gemini/gemini-1.5-flash' indica provedor/modelo
         return LLM(
-            model="gemini/gemini-1.5-flash",
+            model="gemini/gemini-2.5-flash",
             temperature=0.7
         )
     return None
