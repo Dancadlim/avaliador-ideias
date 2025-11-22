@@ -288,8 +288,11 @@ else:
                         with st.status("🤖 Analisando...", expanded=True):
                             if is_historia:
                                 res = teams.rodar_equipe_macro(txt_macro, proj['title'])
+                            elif proj['category'] == 'empreendimento':
+                                # CHAMA A EQUIPE FÍSICA MACRO
+                                res = teams.rodar_equipe_fisico_macro(txt_macro, proj['title'])
                             else:
-                                # CHAMA A NOVA EQUIPE DE NEGÓCIOS (DEFINIDA NO TEAMS.PY)
+                                # CHAMA A EQUIPE DIGITAL MACRO (PROJETOS)
                                 res = teams.rodar_equipe_negocio_macro(txt_macro, proj['title'])
                             
                             salvar_relatorio_crew(proj['id'], "reports_macro", res)
@@ -334,8 +337,11 @@ else:
                             ctx = proj.get("macro_context_text", "")
                             if is_historia:
                                 res = teams.rodar_equipe_micro(txt_micro, ctx)
+                            elif proj['category'] == 'empreendimento':
+                                # CHAMA A EQUIPE FÍSICA MICRO
+                                res = teams.rodar_equipe_fisico_micro(txt_micro, ctx)
                             else:
-                                # CHAMA A NOVA EQUIPE DE NEGÓCIOS MICRO
+                                # CHAMA A EQUIPE DIGITAL MICRO (PROJETOS)
                                 res = teams.rodar_equipe_negocio_micro(txt_micro, ctx)
                             
                             salvar_relatorio_crew(proj['id'], "reports_micro", res)
