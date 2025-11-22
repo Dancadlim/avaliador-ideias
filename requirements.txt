@@ -1,8 +1,6 @@
 streamlit
 firebase-admin
-google-generativeai
-langchain-google-genai
-crewai
-crewai-tools
 python-dotenv
 litellm
+crewai[tools]
+crewai[google-genai]
