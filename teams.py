@@ -2,188 +2,219 @@ import os
 import streamlit as st
 from crewai import Agent, Task, Crew, Process, LLM
 
-# --- CONFIGURAÇÃO DO CÉREBRO (SINTAXE NOVA QUE FUNCIONOU) ---
+# --- CONFIGURAÇÃO DO CÉREBRO ---
 def get_llm():
     if "google" in st.secrets:
         api_key = st.secrets["google"]["api_key"]
-        
-        # O CrewAI precisa da chave no ambiente para o LiteLLM funcionar
         os.environ["GOOGLE_API_KEY"] = api_key
-        
-        # Retorna o LLM nativo
-        # Nota: 'gemini/gemini-1.5-flash' indica provedor/modelo
         return LLM(
             model="gemini/gemini-2.5-flash",
+            api_key=api_key,
             temperature=0.7
         )
     return None
 
 # ==========================================================
-# 🌍 EQUIPE 1: MACRO (O MUNDO)
+# 📚 DOMÍNIO: HISTÓRIA (LIVROS/ROTEIROS)
 # ==========================================================
+
+# --- MACRO (O MUNDO E A LÓGICA) ---
 def rodar_equipe_macro(resumo_universo, titulo_projeto):
     my_llm = get_llm()
-    if not my_llm: return "Erro: Chave de API não encontrada."
+    if not my_llm: return "Erro: Chave de API não configurada."
 
-    # Agente 1: O Lógico
-    agente_logica = Agent(
-        role='Arquiteto de Lore',
-        goal='Validar a consistência do mundo.',
-        backstory='Especialista em encontrar furos de roteiro.',
-        llm=my_llm,
-        verbose=True
+    # 1. O Crítico Estrutural
+    ag_logica = Agent(
+        role='Crítico Estrutural de Narrativa',
+        goal='Identificar furos de roteiro e inconsistências no mundo.',
+        backstory='Você é um editor chato. Se a magia precisa de água, você questiona por que eles vivem no deserto. Você odeia "Deus Ex Machina".',
+        llm=my_llm, verbose=True
     )
 
-    # Agente 2: O Vendedor
-    agente_mercado = Agent(
-        role='Analista de Mercado Literário',
-        goal='Avaliar o potencial comercial.',
-        backstory='Editor sênior focado em best-sellers.',
-        llm=my_llm,
-        verbose=True
+    # 2. O Psicólogo de Personagens
+    ag_psico = Agent(
+        role='Psicólogo de Personagens',
+        goal='Avaliar as motivações e arcos dos protagonistas e vilões.',
+        backstory='Você analisa se as ações dos personagens fazem sentido com suas histórias de vida. Você busca profundidade emocional.',
+        llm=my_llm, verbose=True
     )
 
-    task_logica = Task(
-        description=f"Analise a lógica deste mundo: '{resumo_universo}'. Aponte 3 furos principais.",
-        expected_output="Lista de furos de lógica.",
-        agent=agente_logica
+    # 3. O Agente de Mercado
+    ag_mercado = Agent(
+        role='Agente Literário Comercial',
+        goal='Avaliar o potencial de venda e o "gancho" da história.',
+        backstory='Você só se importa se o livro vai vender. Você conhece os clichês que funcionam e os que cansam o público.',
+        llm=my_llm, verbose=True
     )
 
-    task_mercado = Task(
-        description=f"Baseado na análise anterior, esse livro '{titulo_projeto}' venderia? Por que?",
-        expected_output="Parecer comercial curto.",
-        agent=agente_mercado
+    # Tarefas
+    t_logica = Task(
+        description=f"Analise o universo de '{titulo_projeto}': '{resumo_universo}'. Aponte 3 furos graves na lógica ou regras do mundo.",
+        expected_output="Lista de inconsistências lógicas.",
+        agent=ag_logica
+    )
+    t_psico = Task(
+        description=f"Analise os personagens descritos. Suas motivações sustentam uma história longa? O vilão é crível?",
+        expected_output="Análise psicológica dos personagens.",
+        agent=ag_psico
+    )
+    t_mercado = Task(
+        description=f"Essa premissa é original ou genérica? Tem apelo comercial? Dê uma nota de 0 a 10 para o potencial de venda.",
+        expected_output="Veredito comercial e nota.",
+        agent=ag_mercado
     )
 
-    crew = Crew(
-        agents=[agente_logica, agente_mercado],
-        tasks=[task_logica, task_mercado],
-        process=Process.sequential
-    )
-
+    crew = Crew(agents=[ag_logica, ag_psico, ag_mercado], tasks=[t_logica, t_psico, t_mercado], process=Process.sequential)
     return crew.kickoff()
 
-# ==========================================================
-# ✍️ EQUIPE 2: MICRO (A ESCRITA)
-# ==========================================================
+# --- MICRO (A CENA E A ESCRITA) ---
 def rodar_equipe_micro(texto_capitulo, contexto_macro):
     my_llm = get_llm()
-    if not my_llm: return "Erro: Chave de API não encontrada."
+    if not my_llm: return "Erro: Chave de API não configurada."
 
-    # Agente 1: Continuidade
-    agente_continuidade = Agent(
+    # 1. O Fiscal de Continuidade
+    ag_cont = Agent(
         role='Fiscal de Continuidade',
-        goal='Verificar se o texto segue as regras do mundo.',
-        backstory='Você garante que a magia e as regras não mudem do nada.',
-        llm=my_llm,
-        verbose=True
+        goal='Garantir que o texto respeite as regras do Macro.',
+        backstory='Você lê o contexto do mundo e briga se o autor mudar a cor do olho do herói ou quebrar uma regra mágica.',
+        llm=my_llm, verbose=True
     )
 
-    # Agente 2: Estilo
-    agente_estilo = Agent(
-        role='Editor de Texto',
-        goal='Melhorar a prosa.',
-        backstory='Crítico literário focado em fluidez.',
-        llm=my_llm,
-        verbose=True
+    # 2. O Editor de Texto (Técnico)
+    ag_editor = Agent(
+        role='Editor de Texto Sênior',
+        goal='Melhorar a prosa, ritmo e eliminar vícios de linguagem.',
+        backstory='Você odeia advérbios, repetições e frases passivas. Seu foco é fluidez e clareza.',
+        llm=my_llm, verbose=True
     )
 
-    task_cont = Task(
-        description=f"Regras do Mundo: {contexto_macro}. Texto: {texto_capitulo}. Há contradições?",
+    # 3. O Hater (Leitor Cínico)
+    ag_hater = Agent(
+        role='Leitor Cínico (O Hater)',
+        goal='Apontar diálogos bregas, tédio e vergonha alheia.',
+        backstory='Você é aquele leitor que deixa review de 1 estrela. Você não tem pena. Fale na cara o que está ruim/chato.',
+        llm=my_llm, verbose=True
+    )
+
+    # Tarefas
+    t_cont = Task(
+        description=f"CONTEXTO MACRO: {contexto_macro}\nTEXTO: {texto_capitulo}\nO texto respeita as regras? Há erros de continuidade?",
         expected_output="Relatório de continuidade.",
-        agent=agente_continuidade
+        agent=ag_cont
+    )
+    t_editor = Task(
+        description="Analise a prosa. O ritmo está bom? O 'Show, Don't Tell' foi usado? Reescreva o pior parágrafo.",
+        expected_output="Crítica técnica e reescrita.",
+        agent=ag_editor
+    )
+    t_hater = Task(
+        description="O que está chato, brega ou forçado nessa cena? Seja brutalmente honesto.",
+        expected_output="Crítica ácida e pontos fracos.",
+        agent=ag_hater
     )
 
-    task_estilo = Task(
-        description="Melhore o estilo desse texto. Dê 3 sugestões de reescrita.",
-        expected_output="Sugestões de estilo.",
-        agent=agente_estilo
-    )
-
-    crew = Crew(
-        agents=[agente_continuidade, agente_estilo],
-        tasks=[task_cont, task_estilo],
-        process=Process.sequential
-    )
-
+    crew = Crew(agents=[ag_cont, ag_editor, ag_hater], tasks=[t_cont, t_editor, t_hater], process=Process.sequential)
     return crew.kickoff()
 
+
 # ==========================================================
-# 💼 PROJETOS: MACRO (ESTRATÉGIA DE NEGÓCIO)
+# 💼 DOMÍNIO: PROJETOS & EMPREENDIMENTOS
 # ==========================================================
+
+# --- MACRO (ESTRATÉGIA DE NEGÓCIO) ---
 def rodar_equipe_negocio_macro(resumo_negocio, titulo):
     my_llm = get_llm()
     if not my_llm: return "Erro: Chave de API não configurada."
 
-    # 1. Agentes (Foco em Dinheiro e Produto)
-    ag_financeiro = Agent(
-        role='CFO Estrategista',
-        goal='Avaliar viabilidade financeira e modelos de receita.',
-        backstory='Especialista em startups e monetização. Focado em lucro.',
-        llm=my_llm, verbose=True
-    )
-    ag_produto = Agent(
-        role='Gerente de Produto',
-        goal='Validar o "Product-Market Fit" e a utilidade real.',
-        backstory='Focado na dor do cliente e na solução.',
+    # 1. O Investidor (CFO)
+    ag_cfo = Agent(
+        role='Investidor Anjo Cético',
+        goal='Validar se o negócio dá dinheiro.',
+        backstory='Você quer saber o ROI. Como monetiza? Qual o custo? Você ignora "sonhos" e foca em números.',
         llm=my_llm, verbose=True
     )
 
-    # 2. Tarefas
-    task_fin = Task(
-        description=f"Analise a ideia '{titulo}': '{resumo_negocio}'. Liste 3 formas de monetizar e os maiores custos iniciais.",
-        expected_output="Relatório financeiro resumido.",
-        agent=ag_financeiro
+    # 2. O Estrategista de Produto
+    ag_produto = Agent(
+        role='Diretor de Produto',
+        goal='Validar a dor do cliente e a solução.',
+        backstory='Você usa frameworks como Canvas e Lean Startup. O problema é real ou imaginário?',
+        llm=my_llm, verbose=True
     )
-    task_prod = Task(
-        description=f"Quem é o usuário dessa ideia? O problema é real? A solução faz sentido?",
-        expected_output="Análise de produto e público-alvo.",
+
+    # 3. O Advogado (Risco Macro)
+    ag_legal = Agent(
+        role='Consultor Jurídico Estratégico',
+        goal='Identificar barreiras legais ou regulatórias graves.',
+        backstory='Você verifica se a ideia é legal, se precisa de patentes ou se vai ser processada na primeira semana.',
+        llm=my_llm, verbose=True
+    )
+
+    # Tarefas
+    t_cfo = Task(
+        description=f"Ideia: '{titulo}' - '{resumo_negocio}'. Liste 3 modelos de receita e os maiores riscos financeiros.",
+        expected_output="Análise financeira e de monetização.",
+        agent=ag_cfo
+    )
+    t_prod = Task(
+        description="Quem é a persona? A dor é aguda? A solução resolve? Critique o Product-Market Fit.",
+        expected_output="Validação de produto e mercado.",
         agent=ag_produto
     )
-
-    crew = Crew(
-        agents=[ag_financeiro, ag_produto],
-        tasks=[task_fin, task_prod],
-        process=Process.sequential
+    t_legal = Task(
+        description="Existem riscos regulatórios, de patente ou criminal nessa ideia macro?",
+        expected_output="Parecer jurídico preliminar.",
+        agent=ag_legal
     )
+
+    crew = Crew(agents=[ag_cfo, ag_produto, ag_legal], tasks=[t_cfo, t_prod, t_legal], process=Process.sequential)
     return crew.kickoff()
 
-# ==========================================================
-# ⚙️ PROJETOS: MICRO (EXECUÇÃO E RISCO)
-# ==========================================================
+# --- MICRO (EXECUÇÃO E TÉCNICO) ---
 def rodar_equipe_negocio_micro(detalhes_tecnicos, contexto_macro):
     my_llm = get_llm()
     if not my_llm: return "Erro: Chave de API não configurada."
 
-    # 1. Agentes (Foco em Risco e Usabilidade)
+    # 1. O UX Tester (O Usuário)
     ag_ux = Agent(
-        role='UX Designer Sênior',
-        goal='Garantir que a experiência do usuário seja fluida.',
-        backstory='Especialista em jornada do usuário e acessibilidade.',
-        llm=my_llm, verbose=True
-    )
-    ag_risco = Agent(
-        role='Analista de Risco e Legal',
-        goal='Identificar falhas de segurança, problemas legais (LGPD) e éticos.',
-        backstory='Advogado e Engenheiro de QA. O "Hater" profissional.',
+        role='Especialista em UX/UI',
+        goal='Criticar a jornada do usuário.',
+        backstory='Você defende o usuário. Se for difícil de usar, você reclama. Você odeia processos longos.',
         llm=my_llm, verbose=True
     )
 
-    # 2. Tarefas
-    task_ux = Task(
-        description=f"Contexto Macro: {contexto_macro}. Detalhes Técnicos: '{detalhes_tecnicos}'. A jornada do usuário faz sentido? Onde ele vai travar?",
-        expected_output="Crítica de UX e usabilidade.",
+    # 2. O Engenheiro de Risco (QA/Tech)
+    ag_qa = Agent(
+        role='Engenheiro de Sistemas e QA',
+        goal='Achar falhas técnicas e de segurança.',
+        backstory='Você pensa em como o sistema vai quebrar. E se a internet cair? E se hackearem?',
+        llm=my_llm, verbose=True
+    )
+
+    # 3. O Auditor Ético
+    ag_etica = Agent(
+        role='Auditor de Ética e Compliance',
+        goal='Garantir que a execução seja justa e inclusiva.',
+        backstory='Você verifica viés, acessibilidade e impacto social negativo da implementação.',
+        llm=my_llm, verbose=True
+    )
+
+    # Tarefas
+    t_ux = Task(
+        description=f"Contexto Macro: {contexto_macro}. Detalhes Micro: '{detalhes_tecnicos}'. Analise a jornada. Onde o usuário desiste?",
+        expected_output="Crítica de usabilidade.",
         agent=ag_ux
     )
-    task_risk = Task(
-        description=f"Analise riscos legais (dados, direitos) e técnicos. O que pode dar errado?",
-        expected_output="Relatório de riscos e bandeiras vermelhas.",
-        agent=ag_risco
+    t_qa = Task(
+        description="Quais são os riscos técnicos, de segurança ou bugs lógicos nessa implementação?",
+        expected_output="Relatório de riscos técnicos.",
+        agent=ag_qa
+    )
+    t_etica = Task(
+        description="Essa implementação exclui alguém? Cria vícios? Viola privacidade?",
+        expected_output="Parecer ético.",
+        agent=ag_etica
     )
 
-    crew = Crew(
-        agents=[ag_ux, ag_risco],
-        tasks=[task_ux, task_risk],
-        process=Process.sequential
-    )
+    crew = Crew(agents=[ag_ux, ag_qa, ag_etica], tasks=[t_ux, t_qa, t_etica], process=Process.sequential)
     return crew.kickoff()
