@@ -4,3 +4,5 @@ python-dotenv
 litellm
 crewai[tools]
 crewai[google-genai]
+langchain-google-genai
+google-generativeai
