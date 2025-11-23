@@ -69,3 +69,11 @@ def salvar_chat_historico(projeto_id, campo_banco, historico_json):
     db.collection("ideas").document(projeto_id).update({
         campo_banco: historico_json
     })
+
+def deletar_ideia(projeto_id):
+    try:
+        db.collection("ideas").document(projeto_id).delete()
+        return True
+    except Exception as e:
+        st.error(f"Erro ao deletar: {e}")
+        return False
