@@ -39,9 +39,14 @@ def render_dashboard():
     if page == "🏠 Home":
         st.title("Bem-vindo ao Estúdio")
         st.markdown("Selecione uma categoria no menu lateral para começar.")
-        # Aqui futuramente colocaremos métricas gerais
+        
+        # Métricas Simples
+        c1, c2, c3 = st.columns(3)
+        c1.metric("Seus Projetos", "---")
+        c2.metric("Validações Feitas", "---")
+        c3.metric("Ideias Concretizadas", "---")
+
     else:
-        # Mapeamento Visual -> Técnico
         cat_map = {
             "🏗️ Empreendimentos": "empreendimento", 
             "💻 Projetos Digitais": "projeto", 
@@ -49,29 +54,32 @@ def render_dashboard():
         }
         categoria_tecnica = cat_map.get(page, "projeto")
 
-        # Cabeçalho
         c1, c2 = st.columns([3, 1])
         c1.title(page)
         if c2.button("➕ Nova Ideia", type="primary"):
             render_create_dialog(categoria_tecnica)
         
-        # Listagem (Chama o Serviço)
         docs = db.listar_ideias(st.session_state.user["email"], categoria_tecnica)
         ideias = list(docs)
         
         if not ideias:
             st.info("Nenhum projeto aqui ainda.")
         
-        # Renderiza Cartões
         for doc in ideias:
             data = doc.to_dict()
             with st.container(border=True):
-                col_a, col_b, col_c = st.columns([4, 2, 2])
+                col_a, col_b, col_c, col_d = st.columns([4, 2, 2, 1]) # Coluna extra para delete
                 col_a.subheader(data['title'])
-                col_a.caption(data.get('description', ''))
+                col_a.caption(data.get('description', '')[:100] + "...")
                 col_b.write(f"Status: **{data.get('status', 'Rascunho')}**")
                 
-                # Botão de Abrir (Atualiza Sessão)
-                if col_c.button("Abrir Sala de Guerra ⚔️", key=doc.id):
+                # Botão Abrir
+                if col_c.button("Abrir 📂", key=f"open_{doc.id}"):
                     st.session_state.active_project = {**data, "id": doc.id}
                     st.rerun()
+                
+                # Botão Deletar (Com confirmação visual simples)
+                if col_d.button("🗑️", key=f"del_{doc.id}", help="Deletar este projeto"):
+                    if db.deletar_ideia(doc.id):
+                        st.toast("Projeto deletado com sucesso!")
+                        st.rerun()
