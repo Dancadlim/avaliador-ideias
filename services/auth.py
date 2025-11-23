@@ -1,7 +1,7 @@
 import streamlit as st
 
 def login_simulado():
-    st.session_state.user = {"email": "usuario_teste@gmail.com", "name": "Chefe"}
+    st.session_state.user = {"email": "dancadlim@gmail.com", "name": "Chefe"}
     st.rerun()
 
 def logout():
